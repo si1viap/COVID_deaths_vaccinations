@@ -1,5 +1,5 @@
 
--- create the tables in which import CovidDeaths.csv and CovidVaccinations.csv
+-- create the tables in which to import CovidDeaths.csv and CovidVaccinations.csv
 
 
 CREATE TABLE CovidDeaths(
