@@ -1,0 +1,197 @@
+
+-- create the tables in which import CovidDeaths.csv and CovidVaccinations.csv
+
+
+CREATE TABLE CovidDeaths(
+	iso_code VARCHAR(1000),
+	continent VARCHAR(200),
+	location VARCHAR(100),
+	date DATE,
+	population BIGINT,
+	total_cases INTEGER,
+	new_cases INTEGER,
+	new_cases_smoothed DECIMAL,
+	total_deaths INTEGER,
+	new_deaths INTEGER,
+	new_deaths_smoothed DECIMAL,
+	total_cases_per_million DECIMAL,
+	new_cases_per_million DECIMAL,
+	new_cases_smoothed_per_million DECIMAL,
+	total_deaths_per_million DECIMAL,
+	new_deaths_per_million DECIMAL,
+	new_deaths_smoothed_per_million DECIMAL,
+	reproduction_rate DECIMAL,
+	icu_patients INTEGER,
+	icu_patients_per_million DECIMAL,
+	hosp_patients INTEGER,
+	hosp_patients_per_million DECIMAL,
+	weekly_icu_admissions DECIMAL,
+	weekly_icu_admissions_per_million DECIMAL,
+	weekly_hosp_admissions DECIMAL
+	eekly_hosp_admissions_per_million DECIMAL
+)
+
+
+CREATE TABLE covidvaccitations(
+	iso_code VARCHAR(1000),
+	continent VARCHAR(200),
+	location VARCHAR(100),
+	date DATE,
+	new_tests BIGINT,
+	total_tests BIGINT,
+	total_tests_per_thousand DECIMAL,
+	new_tests_per_thousand DECIMAL,
+	new_tests_smoothed DECIMAL,
+	new_tests_smoothed_per_thousand DECIMAL,
+	positive_rate DECIMAL,
+	tests_per_case DECIMAL,
+	tests_units VARCHAR(100),
+	total_vaccinations BIGINT,
+	people_vaccinated BIGINT,
+	people_fully_vaccinated BIGINT,
+	new_vaccinations INTEGER,
+	new_vaccinations_smoothed INTEGER,
+	total_vaccinations_per_hundred DECIMAL,
+	people_vaccinated_per_hundred DECIMAL,
+	people_fully_vaccinated_per_hundred DECIMAL,
+	new_vaccinations_smoothed_per_million INTEGER,
+	stringency_index DECIMAL,
+	population BIGINT,
+	population_density DECIMAL,
+	median_age DECIMAL,
+	aged_65_older DECIMAL,
+	aged_70_older DECIMAL,
+	gdp_per_capita DECIMAL,
+	extreme_poverty DECIMAL,
+	cardiovasc_death_rate DECIMAL,
+	diabetes_prevalence DECIMAL,
+	female_smokers DECIMAL,
+	male_smokers DECIMAL,
+	handwashing_facilities DECIMAL,
+	hospital_beds_per_thousand DECIMAL,
+	life_expectancy DECIMAL,
+	human_development_index DECIMAL
+)
+
+
+-- use psql to import the databases
+
+
+\copy coviddeaths FROM 'C:\Users\Utente\Desktop\Python\Pg\CovidDeaths.csv' WITH DELIMITER ';' CSV HEADER
+
+
+\copy covidvaccinations FROM 'C:\Users\Utente\Desktop\Python\Pg\CovidVaccinations.csv' WITH DELIMITER ';' CSV HEADER
+
+--start to work with data
+
+SELECT location, date, total_cases, new_cases, total_deaths, population
+FROM coviddeaths
+ORDER BY 1,2
+
+-- total cases vs total_deaths (likelihood to die if you contract covid in Italy)
+
+SELECT location, date, total_cases, 
+total_deaths, (CAST(total_deaths AS DECIMAL)/total_cases)*100 AS deaths_percentage
+FROM coviddeaths
+WHERE location LIKE 'Italy'
+ORDER BY 1,2
+
+-- total_cases vs population (percentage of popolation who catched covid)
+
+
+SELECT location, date, total_cases, 
+population, (CAST(total_cases AS DECIMAL)/population)*100 AS cases_percentage
+FROM coviddeaths
+WHERE location LIKE 'Italy'
+ORDER BY 1,2
+
+
+-- countries with highest infection rate
+
+SELECT location, MAX(total_cases) AS highest_infection_count, 
+population, MAX((CAST(total_cases AS DECIMAL)/population))*100 AS infected_percentage
+FROM coviddeaths
+GROUP BY location, population
+ORDER BY infected_percentage DESC
+
+
+-- continent with highest death count per population
+
+
+SELECT continent, MAX(total_deaths) as total_death_count
+FROM coviddeaths
+WHERE continent IS NOT NULL
+GROUP BY continent
+ORDER BY total_death_count DESC
+
+--  transform it into a view
+
+CREATE VIEW highest_death_count_continents AS
+SELECT continent, MAX(total_deaths) as total_death_count
+FROM coviddeaths
+WHERE continent IS NOT NULL
+GROUP BY continent
+ORDER BY total_death_count DESC
+
+
+-- global numbers
+
+
+SELECT SUM(new_cases) AS total_cases, SUM(new_deaths)AS total_deaths,
+SUM(CAST(new_deaths AS DECIMAL))/SUM(new_cases)*100 AS death_percentage 
+FROM coviddeaths
+WHERE continent is not null
+ORDER BY 1,2
+
+
+-- joining coviddeaths and covidvaccinations to look at total population vs vaccinations
+
+
+SELECT coviddeaths.continent, coviddeaths.location, coviddeaths.date, 
+coviddeaths.population, new_vaccinations,
+SUM(new_vaccinations) OVER (PARTITION BY coviddeaths.location ORDER BY coviddeaths.location, 
+coviddeaths.date) AS rolling_people_vaccinated						
+FROM covidvaccinations
+JOIN coviddeaths on coviddeaths.location = covidvaccinations.location
+AND coviddeaths.date = covidvaccinations.date
+WHERE coviddeaths.continent is not null
+ORDER BY 2,3
+
+-- temp table
+
+CREATE TEMP TABLE IF NOT EXISTS percent_population_vaccinated(
+	continent VARCHAR(255),
+	location VARCHAR(255),
+	date DATE,
+	population NUMERIC,
+	new_vaccinations NUMERIC,
+	rolling_people_vaccinated NUMERIC
+)
+
+INSERT INTO percent_population_vaccinated (continent, location, date, 
+population, new_vaccinations, rolling_people_vaccinated)
+SELECT coviddeaths.continent, coviddeaths.location, coviddeaths.date, 
+coviddeaths.population, new_vaccinations,
+SUM(new_vaccinations) OVER (PARTITION BY coviddeaths.location ORDER BY coviddeaths.location, 
+coviddeaths.date) AS rolling_people_vaccinated						
+FROM covidvaccinations
+JOIN coviddeaths on coviddeaths.location = covidvaccinations.location
+AND coviddeaths.date = covidvaccinations.date
+WHERE coviddeaths.continent is not null
+
+
+SELECT *, (rolling_people_vaccinated/population)*100 AS percent_vaccinated
+FROM percent_population_vaccinated
+
+
+-- create a view on percent_population_vaccinated
+
+CREATE VIEW percent_population_vaccinated AS
+SELECT coviddeaths.continent, coviddeaths.location, coviddeaths.date, 
+coviddeaths.population, new_vaccinations,
+SUM(new_vaccinations) OVER (PARTITION BY coviddeaths.location ORDER BY coviddeaths.location, 
+coviddeaths.date) AS rolling_people_vaccinated						
+FROM covidvaccinations
+JOIN coviddeaths on coviddeaths.location = covidvaccinations.location
+AND coviddeaths.date = covidvaccinations.date
+WHERE coviddeaths.continent is not null
